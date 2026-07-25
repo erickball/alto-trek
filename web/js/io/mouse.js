@@ -137,15 +137,17 @@ var mouse = {
     },
 
     mouseUp: function(e) {
+        // Clear (not XOR): an unpaired mouseUp must never *press* a button.
+        // Touch input can generate up events without a matching down.
         switch (e.button) {
             case 0: // left
-                mouse.mouseButtons ^= MOUSE_LEFT_BUTTON;
+                mouse.mouseButtons &= ~MOUSE_LEFT_BUTTON;
                 break;
             case 1: // middle
-                mouse.mouseButtons ^= MOUSE_MIDDLE_BUTTON;
+                mouse.mouseButtons &= ~MOUSE_MIDDLE_BUTTON;
                 break;
             case 2: // right
-                mouse.mouseButtons ^= MOUSE_RIGHT_BUTTON;
+                mouse.mouseButtons &= ~MOUSE_RIGHT_BUTTON;
                 break;
         }
 

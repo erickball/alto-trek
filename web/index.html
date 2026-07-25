@@ -2,6 +2,7 @@
 <html>
 <head>
     <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <title>Alto Trek — 1978 multiplayer, live in your browser</title>
     <style>
         body {
@@ -17,13 +18,25 @@
             display: block;
             margin: 0 auto;
             border: 2px solid #444;
-            cursor: none;
+            /* crosshair, not none: the Alto draws its own tracking cursor,
+               but a fully hidden host cursor is disorienting (especially
+               before boot, or over black areas of the display) */
+            cursor: crosshair;
+            max-width: 100%;
+            height: auto;
+            touch-action: none;
         }
 
         #container {
-            width: 640px;
+            max-width: 640px;
             margin: 15px auto 20px auto;
+            padding: 0 6px;
         }
+
+        input, select { font-size: 16px; } /* prevents iOS focus-zoom */
+
+        .tbtn { padding: 6px 10px; }
+        .tbtn.active { background: #4a7; color: #000; }
 
         h1 { text-align: center; font-size: 22px; }
         .subtitle { text-align: center; color: #999; margin-top: -12px; }
@@ -66,6 +79,12 @@
         <button id="launchTrekButton" onclick="typeTrek()" disabled
                 title="If the game didn't start automatically once the '>' prompt appeared, click this">Type &quot;trek&quot; for me</button>
         <label><input type="checkbox" id="pointerLockCheckbox" onclick="pointerLockChange()">Captive mouse</label>
+    </div>
+    <div class="controls" id="touchButtons">
+        <span>Touch taps act as mouse button:</span>
+        <button class="tbtn active" data-btn="0">Left</button>
+        <button class="tbtn" data-btn="2">Right</button>
+        <button class="tbtn" data-btn="1">Middle</button>
     </div>
     <div id="status">Loading disk image&hellip;</div>
 
@@ -227,6 +246,77 @@
         setStatus("Launching Trek — you are a Terran ship. Good hunting.");
         launchTrekButton.disabled = true;
     }
+
+    /* ---- Touch controls (mobile) ---------------------------------------- */
+    /* The emulated cursor *walks* toward the host cursor position, so a tap
+     * must give it ~150ms to arrive before the button press registers, or
+     * the Alto "bugs" the wrong spot. Dragging while held works naturally
+     * (that's how you hold shields to max). */
+    var touchButton = 0;                 /* 0=left, 2=right, 1=middle */
+    var touchDownTimer = null;
+    var touchIsDown = false;
+
+    document.querySelectorAll("#touchButtons .tbtn").forEach(function (b) {
+        b.addEventListener("click", function () {
+            touchButton = parseInt(b.dataset.btn, 10);
+            document.querySelectorAll("#touchButtons .tbtn").forEach(function (o) {
+                o.classList.toggle("active", o === b);
+            });
+        });
+    });
+
+    function fakeMouseEvent(btn) {
+        return { button: btn, stopPropagation: function () {}, preventDefault: function () {} };
+    }
+
+    function touchToAlto(t) {
+        var display = document.getElementById("altoDisplay");
+        var rect = display.getBoundingClientRect();
+        return {
+            x: Math.ceil((t.clientX - rect.left) / rect.width * display.width),
+            y: Math.ceil((t.clientY - rect.top) / rect.height * display.height)
+        };
+    }
+
+    (function () {
+        var display = document.getElementById("altoDisplay");
+
+        display.addEventListener("touchstart", function (e) {
+            e.preventDefault();
+            var p = touchToAlto(e.touches[0]);
+            mouse.mouseMove(p.x, p.y);
+            clearTimeout(touchDownTimer);
+            touchDownTimer = setTimeout(function () {
+                mouse.mouseDown(fakeMouseEvent(touchButton));
+                touchIsDown = true;
+            }, 150);
+        }, { passive: false });
+
+        display.addEventListener("touchmove", function (e) {
+            e.preventDefault();
+            var p = touchToAlto(e.touches[0]);
+            mouse.mouseMove(p.x, p.y);
+        }, { passive: false });
+
+        function endTouch(e) {
+            e.preventDefault();
+            clearTimeout(touchDownTimer);
+            var btn = touchButton;
+            if (touchIsDown) {
+                mouse.mouseUp(fakeMouseEvent(btn));
+                touchIsDown = false;
+            } else {
+                /* Quick tap ended before the press landed: play out a full
+                 * click once the cursor has settled. */
+                setTimeout(function () {
+                    mouse.mouseDown(fakeMouseEvent(btn));
+                    setTimeout(function () { mouse.mouseUp(fakeMouseEvent(btn)); }, 120);
+                }, 150);
+            }
+        }
+        display.addEventListener("touchend", endTouch, { passive: false });
+        display.addEventListener("touchcancel", endTouch, { passive: false });
+    })();
 
     /* Disk image auto-loads via main.js window.onload; reflect readiness. */
     var readyPoll = setInterval(function () {
