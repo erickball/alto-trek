@@ -122,6 +122,20 @@
     </div>
     <div id="status">Loading disk image&hellip;</div>
 
+    <!-- Overlay calibration panel: only shown with ?calibrate=1 -->
+    <div id="calibratePanel" class="controls" style="display:none">
+        <fieldset style="border:1px solid #555; display:inline-block; text-align:left">
+            <legend>Overlay calibration</legend>
+            <label>center x <input type="number" id="calCx" step="1" style="width:5em"></label>
+            <label>y <input type="number" id="calCy" step="1" style="width:5em"></label><br>
+            <label>green (ship) inner <input type="number" id="calGi" step="1" style="width:5em"></label>
+            <label>outer <input type="number" id="calGo" step="1" style="width:5em"></label><br>
+            <label>orange (phasers) inner <input type="number" id="calOi" step="1" style="width:5em"></label>
+            <label>outer <input type="number" id="calOo" step="1" style="width:5em"></label>
+            <div>readout: <code id="calReadout"></code></div>
+        </fieldset>
+    </div>
+
     <!-- Hidden but present: main.js expects these -->
     <div style="display:none">
         <select id="diskChooser">
@@ -350,6 +364,55 @@
         var show = trekTyped && document.getElementById("guideCheckbox").checked;
         document.getElementById("guideOverlay").style.display = show ? "block" : "none";
     }
+
+    /* ---- Overlay calibration (?calibrate=1) ------------------------------ */
+    (function () {
+        if (!new URLSearchParams(location.search).has("calibrate")) { return; }
+
+        /* Current geometry; bands are inner..outer radii in Alto pixels */
+        var geo = { cx: 345, cy: 191, gi: 37, go: 50, oi: 27, oo: 37 };
+        var svg = document.getElementById("guideOverlay");
+        var circles = svg.querySelectorAll("circle");
+        var texts = svg.querySelectorAll("text");
+
+        function apply() {
+            var gr = (geo.gi + geo.go) / 2, gw = geo.go - geo.gi;
+            var or_ = (geo.oi + geo.oo) / 2, ow = geo.oo - geo.oi;
+            circles[0].setAttribute("cx", geo.cx); circles[0].setAttribute("cy", geo.cy);
+            circles[0].setAttribute("r", gr); circles[0].setAttribute("stroke-width", gw);
+            circles[1].setAttribute("cx", geo.cx); circles[1].setAttribute("cy", geo.cy);
+            circles[1].setAttribute("r", or_); circles[1].setAttribute("stroke-width", ow);
+            texts[0].setAttribute("x", geo.cx);
+            texts[0].setAttribute("y", geo.cy - gr + 4);
+            texts[1].setAttribute("x", geo.cx);
+            texts[1].setAttribute("y", geo.cy + or_ + 4);
+            document.getElementById("calReadout").textContent =
+                "cx=" + geo.cx + " cy=" + geo.cy +
+                " green=" + geo.gi + ".." + geo.go +
+                " orange=" + geo.oi + ".." + geo.oo;
+        }
+
+        var fields = { calCx: "cx", calCy: "cy", calGi: "gi",
+                       calGo: "go", calOi: "oi", calOo: "oo" };
+        Object.keys(fields).forEach(function (id) {
+            var input = document.getElementById(id);
+            input.value = geo[fields[id]];
+            input.addEventListener("input", function () {
+                var v = parseFloat(input.value);
+                if (!isNaN(v)) { geo[fields[id]] = v; apply(); }
+            });
+        });
+
+        document.getElementById("calibratePanel").style.display = "block";
+        /* In calibration mode, show the overlay immediately (no need to wait
+         * for the game) so the circle can be lined up during/after boot. */
+        updateOverlay = function () {
+            document.getElementById("guideOverlay").style.display =
+                document.getElementById("guideCheckbox").checked ? "block" : "none";
+        };
+        updateOverlay();
+        apply();
+    })();
 
     /* Press one key (down, then up), then optionally continue. */
     function pressKey(keyCode, next) {
