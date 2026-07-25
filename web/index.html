@@ -24,10 +24,11 @@
         canvas {
             background: #000;
             display: block;
-            /* crosshair, not none: the Alto draws its own tracking cursor,
-               but a fully hidden host cursor is disorienting (especially
-               before boot, or over black areas of the display) */
-            cursor: crosshair;
+            /* none: show the Alto's OWN cursor, which Trek changes by zone
+               (arrow → open dot over the phaser-aim ring). This works now
+               that drawCursorWord renders the cursor in the foreground colour
+               (see js/io/alto_display.js). */
+            cursor: none;
             max-width: 100%;
             height: auto;
             /* pinch-zoom (not none): the browser keeps two-finger zoom;
@@ -166,15 +167,19 @@
                 <span class="ship">ship</span>, the narrow
                 <span class="fire">orange inner ring</span> to aim your
                 <span class="fire">phasers</span> (the clickable band is small —
-                aim for the orange). The big dot on the rim is your heading; the
-                small dot is phaser aim.</li>
+                aim for the orange). Watch the cursor: it becomes a
+                <span class="ship">star</span> over the ship-heading ring and an
+                <span class="fire">open circle</span> over the phaser-aim ring, so
+                you can tell which you're about to set. The big dot on the rim is
+                your heading; the small dot is phaser aim.</li>
             <li><strong>Moving</strong> — click in the Accel bar to set thrust
                 (it stays on; click its bottom to cut it). There's inertia: to slow
                 down, turn around and thrust the other way. Don't drift idle —
                 gravity pulls you into stars.</li>
             <li><strong>Shields</strong> — put the cursor just beside your ship in
-                the big lower scanner: left-click raises a shield level (hold for max),
-                right-click lowers. Shields drain energy; energy is life.</li>
+                the big lower scanner (the cursor becomes a bar there): left-click
+                raises a shield level (hold for max), right-click lowers. Shields
+                drain energy; energy is life.</li>
             <li><strong>Firing</strong> — the FIRE Phasers / FIRE Torpedoes boxes.
                 Torpedoes fly where the <span class="ship">ship</span> points,
                 phasers where the <span class="fire">phaser aim</span> points.</li>

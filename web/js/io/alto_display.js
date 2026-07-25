@@ -39,15 +39,23 @@ var altoDisplay = {
 
         var address = ((scanline * 38 * 16 * 4)) + ((xoffset / 4) * 16);
 
-        // TODO: Merge cursor into existing scanline - this clobbers it.
+        // Cursor bits are drawn in the FOREGROUND colour, honouring the display
+        // mode (the original ContrAltoJS ignored whiteOnBlack and always drew
+        // black, so the cursor was invisible in white-on-black software like
+        // Trek). Matches the reference C# which does displayWord |= cursor when
+        // whiteOnBlack, and &= ~cursor otherwise. We draw cursor bits after the
+        // scanline's words, so directly setting the pixel colour is equivalent
+        // to that merge for these two monochrome cases.
+        var color = whiteOnBlack ? 255 : 0;
+        var i, j;
 
         for (i = 0, j = 0; i < (16 * 4); i += 4, j++) {
             var bit = (cursorWord >>> (15 - j)) & 1;
 
             if (bit === 1) {
-                this.imgData.data[address + i    ] = 0;
-                this.imgData.data[address + i + 1] = 0;
-                this.imgData.data[address + i + 2] = 0;
+                this.imgData.data[address + i    ] = color;
+                this.imgData.data[address + i + 1] = color;
+                this.imgData.data[address + i + 2] = color;
                 this.imgData.data[address + i + 3] = 255;
             }
         }
