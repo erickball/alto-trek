@@ -88,25 +88,6 @@
     <p class="subtitle">Gene Ball &amp; Rick Rashid, 1978 — running on an emulated
         Xerox Alto. Everyone on this page shares one virtual Ethernet.</p>
 
-    <div id="screenWrap">
-        <canvas id="altoDisplay" width="608" height="808"></canvas>
-        <svg id="guideOverlay" viewBox="0 0 608 808" xmlns="http://www.w3.org/2000/svg">
-            <!-- Direction circle zones: outer ring = ship heading,
-                 narrow inner ring = phaser aim (the clickable band is small) -->
-            <!-- Bands measured by click-probing the running game (2026-07-25):
-                 dead center < ~20px; phaser aim ~20-35px; ship steering
-                 ~36-55px (extends past the drawn circle's rim) -->
-            <circle cx="345" cy="189" r="45.5" fill="none"
-                    stroke="#3fc98a" stroke-width="19" stroke-opacity="0.25"/>
-            <circle cx="345" cy="189" r="27.5" fill="none"
-                    stroke="#ffa040" stroke-width="15" stroke-opacity="0.38"/>
-            <text x="345" y="153" text-anchor="middle" font-size="11"
-                  font-family="monospace" fill="#3fc98a">SHIP</text>
-            <text x="345" y="226" text-anchor="middle" font-size="11"
-                  font-family="monospace" fill="#ffa040">PHASERS</text>
-        </svg>
-    </div>
-
     <div class="controls">
         <span style="display:inline-block; vertical-align:middle">
             <label>Race:
@@ -127,6 +108,26 @@
         <span id="playersOnline"></span>
     </div>
     <div id="status">Loading disk image&hellip;</div>
+
+    <div id="screenWrap">
+        <canvas id="altoDisplay" width="608" height="808"></canvas>
+        <svg id="guideOverlay" viewBox="0 0 608 808" xmlns="http://www.w3.org/2000/svg">
+            <!-- Direction circle zones: outer ring = ship heading,
+                 narrow inner ring = phaser aim (the clickable band is small) -->
+            <!-- Bands per hands-on calibration (2026-07-25): phaser aim
+                 30-36px, ship steering 42-54px from center (345,189).
+                 (An automated click-probe suggested wider zones, but its
+                 inner-radius hits were likely just the cursor redrawing.) -->
+            <circle cx="345" cy="189" r="48" fill="none"
+                    stroke="#3fc98a" stroke-width="12" stroke-opacity="0.25"/>
+            <circle cx="345" cy="189" r="33" fill="none"
+                    stroke="#ffa040" stroke-width="6" stroke-opacity="0.38"/>
+            <text x="345" y="153" text-anchor="middle" font-size="11"
+                  font-family="monospace" fill="#3fc98a">SHIP</text>
+            <text x="345" y="226" text-anchor="middle" font-size="11"
+                  font-family="monospace" fill="#ffa040">PHASERS</text>
+        </svg>
+    </div>
 
     <!-- Overlay calibration panel: only shown with ?calibrate=1 -->
     <div id="calibratePanel" class="controls" style="display:none">
