@@ -1,0 +1,10 @@
+ContrAlto2-beta.zip
+emulator/*
+!emulator/trekA.cfg
+!emulator/trekB.cfg
+!emulator/boot-trek.script
+!emulator/test-click.script
+!emulator/start-trek-pair.cmd
+node_modules/
+*.log
+.firebase/

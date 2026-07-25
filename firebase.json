@@ -1,0 +1,16 @@
+{
+  "hosting": {
+    "site": "alto-trek",
+    "public": "web",
+    "ignore": ["**/.*"],
+    "headers": [
+      {
+        "source": "images/*.dsk",
+        "headers": [
+          { "key": "Cache-Control", "value": "public, max-age=86400" },
+          { "key": "Content-Type", "value": "application/octet-stream" }
+        ]
+      }
+    ]
+  }
+}

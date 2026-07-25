@@ -1,0 +1,6 @@
+# Boot, launch trek, then click in the long-range scan area.
+# Per the manual, any mouse button in that area swaps it to the Galaxy scan.
+30000ms TypeLine trek
+15000ms MouseMoveAbsolute 150,150
+1000ms MouseDown Left
+300ms MouseUp Left

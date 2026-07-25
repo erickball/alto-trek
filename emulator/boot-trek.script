@@ -1,0 +1,3 @@
+# Boot the Alto and launch Trek from the Executive prompt.
+# Playback auto-starts the system; give the OS time to boot to the ">" prompt.
+30000ms TypeLine trek

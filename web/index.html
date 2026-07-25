@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <title>Alto Trek — 1978 multiplayer, live in your browser</title>
+    <style>
+        body {
+            font-family: Helvetica, Arial, sans-serif;
+            background: #1a1a1a;
+            color: #ddd;
+        }
+
+        a { color: #8cf; }
+
+        canvas {
+            background: #000;
+            display: block;
+            margin: 0 auto;
+            border: 2px solid #444;
+            cursor: none;
+        }
+
+        #container {
+            width: 640px;
+            margin: 15px auto 20px auto;
+        }
+
+        h1 { text-align: center; font-size: 22px; }
+        .subtitle { text-align: center; color: #999; margin-top: -12px; }
+
+        .controls {
+            text-align: center;
+            margin: 12px 0;
+        }
+
+        button {
+            padding: 8px 14px;
+            margin: 4px;
+            font-size: 15px;
+        }
+
+        #status {
+            text-align: center;
+            color: #9c9;
+            min-height: 1.2em;
+            font-size: 14px;
+        }
+
+        details { margin-top: 18px; color: #aaa; font-size: 14px; }
+        summary { cursor: pointer; }
+        code { background: #333; padding: 1px 4px; }
+    </style>
+</head>
+<body>
+
+<div id="container">
+    <h1>Alto Trek</h1>
+    <p class="subtitle">Gene Ball &amp; Rick Rashid, 1978 — running on an emulated
+        Xerox Alto. Everyone on this page shares one virtual Ethernet.</p>
+
+    <canvas id="altoDisplay" width="608" height="808"></canvas>
+
+    <div class="controls">
+        <label>Alto address (octal): <input type="text" id="hostId" size="4"></label>
+        <button id="playButton" onclick="playTrek()">Join battle</button>
+        <button id="launchTrekButton" onclick="typeTrek()" disabled
+                title="If the game didn't start automatically once the '>' prompt appeared, click this">Type &quot;trek&quot; for me</button>
+        <label><input type="checkbox" id="pointerLockCheckbox" onclick="pointerLockChange()">Captive mouse</label>
+    </div>
+    <div id="status">Loading disk image&hellip;</div>
+
+    <!-- Hidden but present: main.js expects these -->
+    <div style="display:none">
+        <select id="diskChooser">
+            <option value="games.dsk" selected="true">games.dsk</option>
+        </select>
+        <button id="bootButton" onclick="bootEmulator()">Boot</button>
+        <button id="stopButton" onclick="stopRunning()">Stop</button>
+        <button id="resetButton" onclick="resetSimulator()">Reset</button>
+    </div>
+
+    <details>
+        <summary>How to play</summary>
+        <ul>
+            <li>Wait for the Alto to boot to the <code>&gt;</code> prompt; the page
+                types <code>trek</code> for you automatically.</li>
+            <li>Everything is mouse-driven: click the outer ring of the
+                <strong>Direction</strong> circle to steer, the <strong>Accel</strong> bar
+                to thrust (click its bottom to cut thrust), the <strong>Fire</strong>
+                boxes to shoot, and next to your ship in the big scanner to raise
+                shields (left-click up, right-click down).</li>
+            <li>Click the top-left scanner for the Galaxy map (right-click returns).</li>
+            <li>Typing broadcasts a chat message to all players. <code>ESC B</code>
+                deploys a base, <code>ESC Q</code> quits.</li>
+            <li>Don't drift idle — gravity pulls you into stars and wrecks your ship.</li>
+        </ul>
+    </details>
+
+    <details>
+        <summary>About</summary>
+        <p>Alto Trek was written by Gene Ball and Rick Rashid at the University of
+            Rochester in the late 1970s for the Xerox Alto — one of the first networked
+            multiplayer games ever made. There is no server-side game logic: exactly as
+            in 1978, every ship broadcasts its state onto the shared (now virtual)
+            Ethernet.</p>
+        <p>Emulation by <a href="https://git.loomcom.com/seth/ContrAltoJS">ContrAltoJS</a>
+            (AGPL-3.0), a JavaScript port of the Living Computer Museum's ContrAlto.</p>
+    </details>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/scheduler.js"></script>
+<script src="js/shifter.js"></script>
+<script src="js/rom.js"></script>
+<script src="js/memory.js"></script>
+<script src="js/memory_bus.js"></script>
+<script src="js/tasks/task.js"></script>
+<script src="js/tasks/emulator_task.js"></script>
+<script src="js/tasks/disk_task.js"></script>
+<script src="js/io/diablo_pack.js"></script>
+<script src="js/io/diablo_drive.js"></script>
+<script src="js/io/disk_controller.js"></script>
+<script src="js/io/alto_display.js"></script>
+<script src="js/io/display_controller.js"></script>
+<script src="js/io/ws_network.js"></script>
+<script src="js/io/ethernet_controller_abridged.js"></script>
+<script src="js/io/mouse.js"></script>
+<script src="js/io/keyboard.js"></script>
+<script src="js/io/music_interface.js"></script>
+<script src="js/cpu.js"></script>
+<script src="js/system.js"></script>
+<script src="js/debugger/debugger.js"></script>
+<script src="js/main.js"></script>
+
+<script>
+    /* ---- Relay configuration ------------------------------------------- */
+    /* Local dev: run `node relay/server.js` and serve this dir over HTTP.
+     * Production: set RELAY_URL to the deployed relay (e.g. Cloud Run). */
+    var RELAY_URL = (location.hostname === "localhost" || location.hostname === "127.0.0.1")
+        ? "ws://localhost:8081/ethernet"
+        : "wss://alto-trek-relay-659904031487.us-central1.run.app/ethernet";
+
+    var AUTO_TYPE_TREK_MS = 30000;   /* type "trek" this long after boot */
+
+    /* ---- UI glue -------------------------------------------------------- */
+    var hostIdField = document.getElementById("hostId");
+    var playButton = document.getElementById("playButton");
+    var launchTrekButton = document.getElementById("launchTrekButton");
+    var statusEl = document.getElementById("status");
+
+    /* Random default address, octal 1..376 (0 = broadcast, 377 = breath-of-life) */
+    hostIdField.value = (Math.floor(Math.random() * 0xFE) + 1).toString(8);
+
+    function setStatus(msg) { statusEl.textContent = msg; }
+
+    function playTrek() {
+        var addr = parseInt(hostIdField.value, 8);
+        if (isNaN(addr) || addr < 1 || addr > 254 /* 0376 */) {
+            alert("Alto address must be octal between 1 and 376");
+            return;
+        }
+        ethernetController.setHostAddress(addr);
+        hostIdField.disabled = true;
+        playButton.disabled = true;
+
+        ethernetController.joinWebSocketNetwork(RELAY_URL, function (state) {
+            setStatus("Network: " + state + "  |  Alto address " + addr.toString(8) +
+                      " (octal)");
+        });
+
+        startRunning();
+        setStatus("Booting the Alto… the game will start itself in ~" +
+                  Math.round(AUTO_TYPE_TREK_MS / 1000) + " seconds");
+
+        setTimeout(function () {
+            typeTrek();
+        }, AUTO_TYPE_TREK_MS);
+        setTimeout(function () { launchTrekButton.disabled = false; },
+                   AUTO_TYPE_TREK_MS + 8000);
+    }
+
+    /* ---- Synthetic keyboard input --------------------------------------- */
+    function fakeKey(keyCode) {
+        return {
+            keyCode: keyCode,
+            location: 0,
+            stopPropagation: function () {},
+            preventDefault: function () {}
+        };
+    }
+
+    /* Types a string into the emulated Alto, one key at a time. Only needs
+     * the unshifted keys Trek's launch requires. */
+    var TYPE_KEYCODES = {
+        "t": 84, "r": 82, "e": 69, "k": 75, "/": 191, "g": 71, "b": 66,
+        "n": 78, "\r": 13,
+        "0": 48, "1": 49, "2": 50, "3": 51, "4": 52,
+        "5": 53, "6": 54, "7": 55, "8": 56, "9": 57
+    };
+
+    function typeString(str) {
+        var i = 0;
+        function next() {
+            if (i >= str.length) { return; }
+            var kc = TYPE_KEYCODES[str[i]];
+            i++;
+            if (kc !== undefined) {
+                keyboard.keyDown(fakeKey(kc));
+                setTimeout(function () {
+                    keyboard.keyUp(fakeKey(kc));
+                    setTimeout(next, 120);
+                }, 120);
+            } else {
+                next();
+            }
+        }
+        next();
+    }
+
+    var trekTyped = false;
+    function typeTrek() {
+        if (trekTyped) { return; }
+        trekTyped = true;
+        typeString("trek\r");
+        setStatus("Launching Trek — you are a Terran ship. Good hunting.");
+        launchTrekButton.disabled = true;
+    }
+
+    /* Disk image auto-loads via main.js window.onload; reflect readiness. */
+    var readyPoll = setInterval(function () {
+        if (!document.getElementById("bootButton").disabled) {
+            clearInterval(readyPoll);
+            setStatus("Ready. Pick an address (or keep the random one) and press Join battle.");
+        }
+    }, 250);
+</script>
+
+</body>
+</html>

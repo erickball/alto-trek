@@ -1,0 +1,15 @@
+{
+  "name": "alto-trek-relay",
+  "version": "1.0.0",
+  "description": "Virtual-Ethernet WebSocket relay for Alto Trek in the browser",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
