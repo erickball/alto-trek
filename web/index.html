@@ -13,11 +13,17 @@
 
         a { color: #8cf; }
 
+        #screenWrap {
+            position: relative;
+            width: fit-content;
+            max-width: 100%;
+            margin: 0 auto;
+            border: 2px solid #444;
+        }
+
         canvas {
             background: #000;
             display: block;
-            margin: 0 auto;
-            border: 2px solid #444;
             /* crosshair, not none: the Alto draws its own tracking cursor,
                but a fully hidden host cursor is disorienting (especially
                before boot, or over black areas of the display) */
@@ -25,6 +31,14 @@
             max-width: 100%;
             height: auto;
             touch-action: none;
+        }
+
+        #guideOverlay {
+            position: absolute;
+            left: 0; top: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;   /* clicks pass through to the game */
+            display: none;
         }
 
         #container {
@@ -35,8 +49,9 @@
 
         input, select { font-size: 16px; } /* prevents iOS focus-zoom */
 
-        .tbtn { padding: 6px 10px; }
-        .tbtn.active { background: #4a7; color: #000; }
+        #playersOnline { color: #8cf; font-weight: bold; }
+        .ship { color: #3fc98a; font-weight: bold; }
+        .fire { color: #ffa040; font-weight: bold; }
 
         h1 { text-align: center; font-size: 22px; }
         .subtitle { text-align: center; color: #999; margin-top: -12px; }
@@ -71,18 +86,26 @@
     <p class="subtitle">Gene Ball &amp; Rick Rashid, 1978 — running on an emulated
         Xerox Alto. Everyone on this page shares one virtual Ethernet.</p>
 
-    <canvas id="altoDisplay" width="608" height="808"></canvas>
+    <div id="screenWrap">
+        <canvas id="altoDisplay" width="608" height="808"></canvas>
+        <svg id="guideOverlay" viewBox="0 0 608 808" xmlns="http://www.w3.org/2000/svg">
+            <!-- Direction circle zones: outer ring = ship heading,
+                 inner disc = phaser aim -->
+            <circle cx="350" cy="193" r="55" fill="#3fc98a" fill-opacity="0.22"/>
+            <circle cx="350" cy="193" r="27" fill="#ffa040" fill-opacity="0.38"/>
+            <text x="350" y="152" text-anchor="middle" font-size="11"
+                  font-family="monospace" fill="#3fc98a">SHIP</text>
+            <text x="350" y="197" text-anchor="middle" font-size="11"
+                  font-family="monospace" fill="#ffa040">FIRE</text>
+        </svg>
+    </div>
 
     <div class="controls">
-        <button id="launchTrekButton" onclick="typeTrek()" disabled
-                title="If the game didn't start automatically once the '>' prompt appeared, click this">Type &quot;trek&quot; for me</button>
-        <label><input type="checkbox" id="pointerLockCheckbox" onclick="pointerLockChange()">Captive mouse</label>
-    </div>
-    <div class="controls" id="touchButtons">
-        <span>Touch taps act as mouse button:</span>
-        <button class="tbtn active" data-btn="0">Left</button>
-        <button class="tbtn" data-btn="2">Right</button>
-        <button class="tbtn" data-btn="1">Middle</button>
+        <button id="dropBaseButton" onclick="dropBase()" disabled
+                title="Sends ESC B to the Alto">Drop base</button>
+        <label><input type="checkbox" id="guideCheckbox" checked
+                onclick="updateOverlay()">Control guide</label>
+        <span id="playersOnline"></span>
     </div>
     <div id="status">Loading disk image&hellip;</div>
 
@@ -96,23 +119,50 @@
         <button id="resetButton" onclick="resetSimulator()">Reset</button>
     </div>
 
-    <details>
+    <details open>
         <summary>How to play</summary>
+        <p><strong>The goal:</strong> destroy enemy ships — and become
+            <em>Master of the Universe</em> by placing a star base in every stellar
+            system. (Condensed from the original
+            <a href="docs/trek21.pdf">1979 Alto Trek manual</a>.)</p>
         <ul>
-            <li>Wait for the Alto to boot to the <code>&gt;</code> prompt; the page
-                types <code>trek</code> for you automatically.</li>
-            <li>Everything is mouse-driven: click the outer ring of the
-                <strong>Direction</strong> circle to steer, the <strong>Accel</strong> bar
-                to thrust (click its bottom to cut thrust), the <strong>Fire</strong>
-                boxes to shoot, and next to your ship in the big scanner to raise
-                shields (left-click up, right-click down).</li>
-            <li>Click the top-left scanner for the Galaxy map (right-click returns).</li>
-            <li>Typing broadcasts a chat message to all players. <code>ESC B</code>
-                deploys a base, <code>ESC Q</code> quits.</li>
-            <li>On touch screens: tap = left click, <strong>long-press = right
-                click</strong> (held until you lift), drag = hold the selected
-                button while moving.</li>
-            <li>Don't drift idle — gravity pulls you into stars and wrecks your ship.</li>
+            <li><strong>Steering &amp; firing direction</strong> — the Direction
+                circle (see the colored guide overlay): click the
+                <span class="ship">green outer ring</span> to point your
+                <span class="ship">ship</span>, the
+                <span class="fire">orange center</span> to aim your
+                <span class="fire">phasers</span>. The big dot on the rim is your
+                heading; the small dot is phaser aim.</li>
+            <li><strong>Moving</strong> — click in the Accel bar to set thrust
+                (it stays on; click its bottom to cut it). There's inertia: to slow
+                down, turn around and thrust the other way. Don't drift idle —
+                gravity pulls you into stars.</li>
+            <li><strong>Shields</strong> — put the cursor just beside your ship in
+                the big lower scanner: left-click raises a shield level (hold for max),
+                right-click lowers. Shields drain energy; energy is life.</li>
+            <li><strong>Firing</strong> — the FIRE Phasers / FIRE Torpedoes boxes.
+                Torpedoes fly where the <span class="ship">ship</span> points,
+                phasers where the <span class="fire">phaser aim</span> points.</li>
+            <li><strong>Jumping between systems</strong> — get near a star gate
+                (the <code>+</code> in the scanners) and slow to a stop. Click the
+                top-left scanner to see the Galaxy map, note the direction of your
+                destination system, point your ship that way, and accelerate — the
+                screen flashes when you jump. (Right-click the Galaxy map to return
+                to the local scan.)</li>
+            <li><strong>Bases</strong> — press <strong>Drop base</strong> (sends
+                <code>ESC B</code>) to deploy one; you carry a limited supply. Bases
+                dropped near asteroid clusters become <em>constructor</em> bases that
+                manufacture more. Approach one of your bases <em>slowly</em> to dock:
+                full repair and resupply. In the Galaxy map, left-click a system
+                containing your base to jump to it; middle-click (two-finger tap)
+                for a remote scan around it.</li>
+            <li><strong>Chat</strong> — click the screen, then type: your message
+                broadcasts to every player (and reveals your race and location…).</li>
+            <li><strong>Touch screens</strong> — tap = left click,
+                <strong>long-press = right click</strong> (held until you lift),
+                drag = hold left while moving, two-finger tap = middle click.</li>
+            <li>If you die you'll usually "rise to fight again" — unless you ran
+                completely out of energy, so watch the Energy bar.</li>
         </ul>
     </details>
 
@@ -165,8 +215,8 @@
     var AUTO_TYPE_TREK_MS = 30000;   /* type "trek" this long after boot */
 
     /* ---- UI glue -------------------------------------------------------- */
-    var launchTrekButton = document.getElementById("launchTrekButton");
     var statusEl = document.getElementById("status");
+    var playersEl = document.getElementById("playersOnline");
 
     /* Alto address: ?addr=NN (octal) URL override, else random.
      * Octal 1..376 (0 = broadcast, 377 = breath-of-life). */
@@ -182,20 +232,25 @@
     function playTrek() {
         ethernetController.setHostAddress(altoAddr);
 
-        ethernetController.joinWebSocketNetwork(RELAY_URL, function (state) {
-            setStatus("Network: " + state + "  |  your Alto address: " +
-                      altoAddr.toString(8) + " (octal)");
-        });
+        ethernetController.joinWebSocketNetwork(RELAY_URL,
+            function (state) {
+                if (state !== "connected") {
+                    playersEl.textContent = "network: " + state;
+                }
+            },
+            function (count) {
+                playersEl.textContent = "⚡ " + count +
+                    (count === 1 ? " player online (that's you)" : " players online");
+            });
 
         startRunning();
         setStatus("Booting the Alto… the game starts itself in ~" +
-                  Math.round(AUTO_TYPE_TREK_MS / 1000) + " seconds");
+                  Math.round(AUTO_TYPE_TREK_MS / 1000) + " seconds. Your Alto address: " +
+                  altoAddr.toString(8) + " (octal)");
 
         setTimeout(function () {
             typeTrek();
         }, AUTO_TYPE_TREK_MS);
-        setTimeout(function () { launchTrekButton.disabled = false; },
-                   AUTO_TYPE_TREK_MS + 8000);
     }
 
     /* ---- Synthetic keyboard input --------------------------------------- */
@@ -242,36 +297,48 @@
         trekTyped = true;
         typeString("trek\r");
         setStatus("Launching Trek — you are a Terran ship. Good hunting.");
-        launchTrekButton.disabled = true;
+        document.getElementById("dropBaseButton").disabled = false;
+        setTimeout(updateOverlay, 8000);   /* show the guide once the game is up */
+    }
+
+    function updateOverlay() {
+        var show = trekTyped && document.getElementById("guideCheckbox").checked;
+        document.getElementById("guideOverlay").style.display = show ? "block" : "none";
+    }
+
+    /* Press one key (down, then up), then optionally continue. */
+    function pressKey(keyCode, next) {
+        keyboard.keyDown(fakeKey(keyCode));
+        setTimeout(function () {
+            keyboard.keyUp(fakeKey(keyCode));
+            if (next) { setTimeout(next, 150); }
+        }, 150);
+    }
+
+    /* Deploy a star base: the game command is ESC followed by B. */
+    function dropBase() {
+        pressKey(27 /* ESC */, function () { pressKey(66 /* B */); });
     }
 
     /* ---- Touch controls (mobile) ---------------------------------------- */
     /* Gestures:
-     *   quick tap            -> click with the selected button (default Left)
+     *   quick tap            -> LEFT click
+     *   two-finger tap       -> MIDDLE click (remote base scan in Galaxy map)
      *   hold >=500ms still   -> RIGHT button, held until you lift
      *                           (long-press = right-click, Windows-touch style)
-     *   drag                 -> selected button pressed and held while moving
+     *   drag                 -> LEFT button pressed and held while moving
      *                           (hold left near your ship = shields to max)
      * The emulated cursor *walks* toward the host position, so a quick tap's
      * click is delayed ~150ms to let it arrive, or the Alto would "bug" the
      * wrong spot. */
-    var touchButton = 0;                 /* 0=left, 2=right, 1=middle */
     var LONGPRESS_MS = 500;
     var DRAG_THRESHOLD_PX = 12;          /* CSS px before a touch counts as a drag */
 
     var touchState = "idle";             /* idle | pending | down */
+    var touchTapButton = 0;              /* button a quick tap will click with */
     var touchHeldButton = 0;
     var longPressTimer = null;
     var touchStartXY = null;
-
-    document.querySelectorAll("#touchButtons .tbtn").forEach(function (b) {
-        b.addEventListener("click", function () {
-            touchButton = parseInt(b.dataset.btn, 10);
-            document.querySelectorAll("#touchButtons .tbtn").forEach(function (o) {
-                o.classList.toggle("active", o === b);
-            });
-        });
-    });
 
     function fakeMouseEvent(btn) {
         return { button: btn, stopPropagation: function () {}, preventDefault: function () {} };
@@ -295,6 +362,8 @@
             touchStartXY = { x: t.clientX, y: t.clientY };
             mouse.mouseMove(touchToAlto(t).x, touchToAlto(t).y);
             touchState = "pending";
+            /* A second finger arriving turns this tap into a middle click */
+            touchTapButton = (e.touches.length >= 2) ? 1 : 0;
 
             clearTimeout(longPressTimer);
             longPressTimer = setTimeout(function () {
@@ -317,9 +386,9 @@
                 var dx = t.clientX - touchStartXY.x;
                 var dy = t.clientY - touchStartXY.y;
                 if (dx * dx + dy * dy > DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) {
-                    /* It's a drag: press the selected button and hold it */
+                    /* It's a drag: press and hold the left button */
                     clearTimeout(longPressTimer);
-                    touchHeldButton = touchButton;
+                    touchHeldButton = 0;
                     mouse.mouseDown(fakeMouseEvent(touchHeldButton));
                     touchState = "down";
                 }
@@ -333,7 +402,7 @@
                 mouse.mouseUp(fakeMouseEvent(touchHeldButton));
             } else if (touchState === "pending") {
                 /* Quick tap: play out a full click once the cursor settles */
-                var btn = touchButton;
+                var btn = touchTapButton;
                 setTimeout(function () {
                     mouse.mouseDown(fakeMouseEvent(btn));
                     setTimeout(function () { mouse.mouseUp(fakeMouseEvent(btn)); }, 120);

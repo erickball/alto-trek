@@ -37,6 +37,13 @@ AltoWSNetwork.prototype = {
         ws.onmessage = function (event) {
             if (event.data instanceof ArrayBuffer) {
                 self.receivedFrameCallback(new Uint8Array(event.data));
+            } else if (typeof event.data === "string" && self.onPresence) {
+                try {
+                    var msg = JSON.parse(event.data);
+                    if (msg.type === "presence") {
+                        self.onPresence(msg.count);
+                    }
+                } catch (e) { /* not JSON; ignore */ }
             }
         };
 

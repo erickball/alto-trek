@@ -47,6 +47,7 @@ wss.on("connection", (ws, req) => {
     }
     members.add(ws);
     log(`join ${room} (${members.size} aboard)`);
+    broadcastPresence(members);
 
     ws.on("message", (data, isBinary) => {
         if (!isBinary || data.length === 0 || data.length > MAX_FRAME_BYTES) {
@@ -65,10 +66,22 @@ wss.on("connection", (ws, req) => {
             rooms.delete(room);
         }
         log(`leave ${room} (${members.size} aboard)`);
+        broadcastPresence(members);
     };
     ws.on("close", bye);
     ws.on("error", bye);
 });
+
+// Tell everyone in the room how many players are connected. Sent as a TEXT
+// message so clients can tell it apart from binary Ethernet frames.
+function broadcastPresence(members) {
+    const msg = JSON.stringify({ type: "presence", count: members.size });
+    for (const ws of members) {
+        if (ws.readyState === ws.OPEN) {
+            ws.send(msg);
+        }
+    }
+}
 
 // Keepalive: Cloud Run and some proxies drop idle connections.
 setInterval(() => {

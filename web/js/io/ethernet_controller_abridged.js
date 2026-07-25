@@ -68,7 +68,7 @@ var ethernetController = {
         return this;
     },
 
-    joinWebSocketNetwork: function(url, connectionStateChangedCallback) {
+    joinWebSocketNetwork: function(url, connectionStateChangedCallback, presenceCallback) {
         console.log("Joining the virtual Ethernet via relay: " + url);
 
         var self = this;
@@ -84,6 +84,7 @@ var ethernetController = {
             },
             connectionStateChangedCallback
         );
+        this.network.onPresence = presenceCallback || null;
         this.network.connect();
     },
 
