@@ -30,7 +30,9 @@
             cursor: crosshair;
             max-width: 100%;
             height: auto;
-            touch-action: none;
+            /* pinch-zoom (not none): the browser keeps two-finger zoom;
+               single-finger panning stays disabled so drags reach the game */
+            touch-action: pinch-zoom;
         }
 
         #guideOverlay {
@@ -90,13 +92,15 @@
         <canvas id="altoDisplay" width="608" height="808"></canvas>
         <svg id="guideOverlay" viewBox="0 0 608 808" xmlns="http://www.w3.org/2000/svg">
             <!-- Direction circle zones: outer ring = ship heading,
-                 inner disc = phaser aim -->
-            <circle cx="350" cy="193" r="55" fill="#3fc98a" fill-opacity="0.22"/>
-            <circle cx="350" cy="193" r="27" fill="#ffa040" fill-opacity="0.38"/>
-            <text x="350" y="152" text-anchor="middle" font-size="11"
+                 narrow inner ring = phaser aim (the clickable band is small) -->
+            <circle cx="347" cy="193" r="43.5" fill="none"
+                    stroke="#3fc98a" stroke-width="13" stroke-opacity="0.25"/>
+            <circle cx="347" cy="193" r="32" fill="none"
+                    stroke="#ffa040" stroke-width="10" stroke-opacity="0.38"/>
+            <text x="347" y="152" text-anchor="middle" font-size="11"
                   font-family="monospace" fill="#3fc98a">SHIP</text>
-            <text x="350" y="197" text-anchor="middle" font-size="11"
-                  font-family="monospace" fill="#ffa040">FIRE</text>
+            <text x="347" y="228" text-anchor="middle" font-size="11"
+                  font-family="monospace" fill="#ffa040">PHASERS</text>
         </svg>
     </div>
 
@@ -129,10 +133,11 @@
             <li><strong>Steering &amp; firing direction</strong> — the Direction
                 circle (see the colored guide overlay): click the
                 <span class="ship">green outer ring</span> to point your
-                <span class="ship">ship</span>, the
-                <span class="fire">orange center</span> to aim your
-                <span class="fire">phasers</span>. The big dot on the rim is your
-                heading; the small dot is phaser aim.</li>
+                <span class="ship">ship</span>, the narrow
+                <span class="fire">orange inner ring</span> to aim your
+                <span class="fire">phasers</span> (the clickable band is small —
+                aim for the orange). The big dot on the rim is your heading; the
+                small dot is phaser aim.</li>
             <li><strong>Moving</strong> — click in the Accel bar to set thrust
                 (it stays on; click its bottom to cut it). There's inertia: to slow
                 down, turn around and thrust the other way. Don't drift idle —
@@ -160,7 +165,8 @@
                 broadcasts to every player (and reveals your race and location…).</li>
             <li><strong>Touch screens</strong> — tap = left click,
                 <strong>long-press = right click</strong> (held until you lift),
-                drag = hold left while moving, two-finger tap = middle click.</li>
+                drag = hold left while moving, two-finger tap = middle click,
+                pinch = zoom.</li>
             <li>If you die you'll usually "rise to fight again" — unless you ran
                 completely out of energy, so watch the Energy bar.</li>
         </ul>
@@ -356,33 +362,47 @@
     (function () {
         var display = document.getElementById("altoDisplay");
 
+        /* No preventDefault on touchstart/touchmove: with touch-action set to
+         * pinch-zoom, the browser owns two-finger gestures (zoom) and there is
+         * no single-finger default action to suppress. Synthetic mouse events
+         * are blocked at touchend instead. If the browser claims a gesture it
+         * sends touchcancel — reset silently, never click. */
         display.addEventListener("touchstart", function (e) {
-            e.preventDefault();
             var t = e.touches[0];
-            touchStartXY = { x: t.clientX, y: t.clientY };
-            mouse.mouseMove(touchToAlto(t).x, touchToAlto(t).y);
-            touchState = "pending";
-            /* A second finger arriving turns this tap into a middle click */
-            touchTapButton = (e.touches.length >= 2) ? 1 : 0;
+            if (e.touches.length === 1) {
+                touchStartXY = { x: t.clientX, y: t.clientY };
+                mouse.mouseMove(touchToAlto(t).x, touchToAlto(t).y);
+                touchState = "pending";
+                touchTapButton = 0;
 
-            clearTimeout(longPressTimer);
-            longPressTimer = setTimeout(function () {
+                clearTimeout(longPressTimer);
+                longPressTimer = setTimeout(function () {
+                    if (touchState === "pending") {
+                        /* Long-press: right button, held until lift */
+                        touchHeldButton = 2;
+                        mouse.mouseDown(fakeMouseEvent(touchHeldButton));
+                        touchState = "down";
+                        if (navigator.vibrate) { navigator.vibrate(30); }
+                    }
+                }, LONGPRESS_MS);
+            } else {
+                /* Second finger: a quick two-finger tap = middle click, but a
+                 * pinch belongs to the browser — no long-press, no drag. */
+                clearTimeout(longPressTimer);
                 if (touchState === "pending") {
-                    /* Long-press: right button, held until lift */
-                    touchHeldButton = 2;
-                    mouse.mouseDown(fakeMouseEvent(touchHeldButton));
-                    touchState = "down";
-                    if (navigator.vibrate) { navigator.vibrate(30); }
+                    touchTapButton = 1;
                 }
-            }, LONGPRESS_MS);
-        }, { passive: false });
+            }
+        }, { passive: true });
 
         display.addEventListener("touchmove", function (e) {
-            e.preventDefault();
+            if (e.touches.length !== 1) {
+                return;   /* two-finger movement is the browser's pinch */
+            }
             var t = e.touches[0];
             mouse.mouseMove(touchToAlto(t).x, touchToAlto(t).y);
 
-            if (touchState === "pending" && touchStartXY) {
+            if (touchState === "pending" && touchStartXY && touchTapButton === 0) {
                 var dx = t.clientX - touchStartXY.x;
                 var dy = t.clientY - touchStartXY.y;
                 if (dx * dx + dy * dy > DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) {
@@ -393,10 +413,15 @@
                     touchState = "down";
                 }
             }
-        }, { passive: false });
+        }, { passive: true });
 
-        function endTouch(e) {
-            e.preventDefault();
+        display.addEventListener("touchend", function (e) {
+            if (e.cancelable) {
+                e.preventDefault();   /* stop synthetic mouse events */
+            }
+            if (e.touches.length > 0) {
+                return;   /* wait until the last finger lifts */
+            }
             clearTimeout(longPressTimer);
             if (touchState === "down") {
                 mouse.mouseUp(fakeMouseEvent(touchHeldButton));
@@ -409,9 +434,16 @@
                 }, 150);
             }
             touchState = "idle";
-        }
-        display.addEventListener("touchend", endTouch, { passive: false });
-        display.addEventListener("touchcancel", endTouch, { passive: false });
+        }, { passive: false });
+
+        display.addEventListener("touchcancel", function (e) {
+            /* Browser claimed the gesture (pinch-zoom): reset, never click */
+            clearTimeout(longPressTimer);
+            if (touchState === "down") {
+                mouse.mouseUp(fakeMouseEvent(touchHeldButton));
+            }
+            touchState = "idle";
+        }, { passive: true });
     })();
 
     /* Disk image auto-loads via main.js window.onload; start as soon as it
