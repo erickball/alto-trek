@@ -74,8 +74,6 @@
     <canvas id="altoDisplay" width="608" height="808"></canvas>
 
     <div class="controls">
-        <label>Alto address (octal): <input type="text" id="hostId" size="4"></label>
-        <button id="playButton" onclick="playTrek()">Join battle</button>
         <button id="launchTrekButton" onclick="typeTrek()" disabled
                 title="If the game didn't start automatically once the '>' prompt appeared, click this">Type &quot;trek&quot; for me</button>
         <label><input type="checkbox" id="pointerLockCheckbox" onclick="pointerLockChange()">Captive mouse</label>
@@ -111,6 +109,9 @@
             <li>Click the top-left scanner for the Galaxy map (right-click returns).</li>
             <li>Typing broadcasts a chat message to all players. <code>ESC B</code>
                 deploys a base, <code>ESC Q</code> quits.</li>
+            <li>On touch screens: tap = left click, <strong>long-press = right
+                click</strong> (held until you lift), drag = hold the selected
+                button while moving.</li>
             <li>Don't drift idle — gravity pulls you into stars and wrecks your ship.</li>
         </ul>
     </details>
@@ -164,33 +165,30 @@
     var AUTO_TYPE_TREK_MS = 30000;   /* type "trek" this long after boot */
 
     /* ---- UI glue -------------------------------------------------------- */
-    var hostIdField = document.getElementById("hostId");
-    var playButton = document.getElementById("playButton");
     var launchTrekButton = document.getElementById("launchTrekButton");
     var statusEl = document.getElementById("status");
 
-    /* Random default address, octal 1..376 (0 = broadcast, 377 = breath-of-life) */
-    hostIdField.value = (Math.floor(Math.random() * 0xFE) + 1).toString(8);
+    /* Alto address: ?addr=NN (octal) URL override, else random.
+     * Octal 1..376 (0 = broadcast, 377 = breath-of-life). */
+    var addrParam = parseInt(new URLSearchParams(location.search).get("addr"), 8);
+    var altoAddr = (!isNaN(addrParam) && addrParam >= 1 && addrParam <= 254)
+        ? addrParam
+        : Math.floor(Math.random() * 0xFE) + 1;
 
     function setStatus(msg) { statusEl.textContent = msg; }
 
+    /* Everything is automatic: as soon as the disk image has loaded, join
+     * the shared Ethernet, boot the Alto, and (30s later) type "trek". */
     function playTrek() {
-        var addr = parseInt(hostIdField.value, 8);
-        if (isNaN(addr) || addr < 1 || addr > 254 /* 0376 */) {
-            alert("Alto address must be octal between 1 and 376");
-            return;
-        }
-        ethernetController.setHostAddress(addr);
-        hostIdField.disabled = true;
-        playButton.disabled = true;
+        ethernetController.setHostAddress(altoAddr);
 
         ethernetController.joinWebSocketNetwork(RELAY_URL, function (state) {
-            setStatus("Network: " + state + "  |  Alto address " + addr.toString(8) +
-                      " (octal)");
+            setStatus("Network: " + state + "  |  your Alto address: " +
+                      altoAddr.toString(8) + " (octal)");
         });
 
         startRunning();
-        setStatus("Booting the Alto… the game will start itself in ~" +
+        setStatus("Booting the Alto… the game starts itself in ~" +
                   Math.round(AUTO_TYPE_TREK_MS / 1000) + " seconds");
 
         setTimeout(function () {
@@ -248,13 +246,23 @@
     }
 
     /* ---- Touch controls (mobile) ---------------------------------------- */
-    /* The emulated cursor *walks* toward the host cursor position, so a tap
-     * must give it ~150ms to arrive before the button press registers, or
-     * the Alto "bugs" the wrong spot. Dragging while held works naturally
-     * (that's how you hold shields to max). */
+    /* Gestures:
+     *   quick tap            -> click with the selected button (default Left)
+     *   hold >=500ms still   -> RIGHT button, held until you lift
+     *                           (long-press = right-click, Windows-touch style)
+     *   drag                 -> selected button pressed and held while moving
+     *                           (hold left near your ship = shields to max)
+     * The emulated cursor *walks* toward the host position, so a quick tap's
+     * click is delayed ~150ms to let it arrive, or the Alto would "bug" the
+     * wrong spot. */
     var touchButton = 0;                 /* 0=left, 2=right, 1=middle */
-    var touchDownTimer = null;
-    var touchIsDown = false;
+    var LONGPRESS_MS = 500;
+    var DRAG_THRESHOLD_PX = 12;          /* CSS px before a touch counts as a drag */
+
+    var touchState = "idle";             /* idle | pending | down */
+    var touchHeldButton = 0;
+    var longPressTimer = null;
+    var touchStartXY = null;
 
     document.querySelectorAll("#touchButtons .tbtn").forEach(function (b) {
         b.addEventListener("click", function () {
@@ -283,46 +291,67 @@
 
         display.addEventListener("touchstart", function (e) {
             e.preventDefault();
-            var p = touchToAlto(e.touches[0]);
-            mouse.mouseMove(p.x, p.y);
-            clearTimeout(touchDownTimer);
-            touchDownTimer = setTimeout(function () {
-                mouse.mouseDown(fakeMouseEvent(touchButton));
-                touchIsDown = true;
-            }, 150);
+            var t = e.touches[0];
+            touchStartXY = { x: t.clientX, y: t.clientY };
+            mouse.mouseMove(touchToAlto(t).x, touchToAlto(t).y);
+            touchState = "pending";
+
+            clearTimeout(longPressTimer);
+            longPressTimer = setTimeout(function () {
+                if (touchState === "pending") {
+                    /* Long-press: right button, held until lift */
+                    touchHeldButton = 2;
+                    mouse.mouseDown(fakeMouseEvent(touchHeldButton));
+                    touchState = "down";
+                    if (navigator.vibrate) { navigator.vibrate(30); }
+                }
+            }, LONGPRESS_MS);
         }, { passive: false });
 
         display.addEventListener("touchmove", function (e) {
             e.preventDefault();
-            var p = touchToAlto(e.touches[0]);
-            mouse.mouseMove(p.x, p.y);
+            var t = e.touches[0];
+            mouse.mouseMove(touchToAlto(t).x, touchToAlto(t).y);
+
+            if (touchState === "pending" && touchStartXY) {
+                var dx = t.clientX - touchStartXY.x;
+                var dy = t.clientY - touchStartXY.y;
+                if (dx * dx + dy * dy > DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) {
+                    /* It's a drag: press the selected button and hold it */
+                    clearTimeout(longPressTimer);
+                    touchHeldButton = touchButton;
+                    mouse.mouseDown(fakeMouseEvent(touchHeldButton));
+                    touchState = "down";
+                }
+            }
         }, { passive: false });
 
         function endTouch(e) {
             e.preventDefault();
-            clearTimeout(touchDownTimer);
-            var btn = touchButton;
-            if (touchIsDown) {
-                mouse.mouseUp(fakeMouseEvent(btn));
-                touchIsDown = false;
-            } else {
-                /* Quick tap ended before the press landed: play out a full
-                 * click once the cursor has settled. */
+            clearTimeout(longPressTimer);
+            if (touchState === "down") {
+                mouse.mouseUp(fakeMouseEvent(touchHeldButton));
+            } else if (touchState === "pending") {
+                /* Quick tap: play out a full click once the cursor settles */
+                var btn = touchButton;
                 setTimeout(function () {
                     mouse.mouseDown(fakeMouseEvent(btn));
                     setTimeout(function () { mouse.mouseUp(fakeMouseEvent(btn)); }, 120);
                 }, 150);
             }
+            touchState = "idle";
         }
         display.addEventListener("touchend", endTouch, { passive: false });
         display.addEventListener("touchcancel", endTouch, { passive: false });
     })();
 
-    /* Disk image auto-loads via main.js window.onload; reflect readiness. */
+    /* Disk image auto-loads via main.js window.onload; start as soon as it
+     * has actually arrived (bootButton is only enabled by the load callback —
+     * booting earlier would start the Alto with an empty drive). */
     var readyPoll = setInterval(function () {
         if (!document.getElementById("bootButton").disabled) {
             clearInterval(readyPoll);
-            setStatus("Ready. Pick an address (or keep the random one) and press Join battle.");
+            playTrek();
         }
     }, 250);
 </script>
