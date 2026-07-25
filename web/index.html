@@ -100,6 +100,14 @@
             </label><br>
             <small style="color:#888">(pick before the game starts)</small>
         </span>
+        <span style="display:inline-block; vertical-align:middle">
+            <label>Name:
+                <input type="text" id="nameField" size="7" maxlength="12"
+                       placeholder="optional"
+                       title="A one-word login name. Trek identifies you by its first letter.">
+            </label><br>
+            <small style="color:#888">(one word; adds a few seconds to boot)</small>
+        </span>
         <button id="dropBaseButton" onclick="dropBase()" disabled
                 title="Sends ESC B to the Alto">Drop base</button>
         <button id="cloakButton" onclick="toggleCloak()" disabled
@@ -207,6 +215,10 @@
                 rapid-fire torpedoes (only 15 aboard), long-range single-beam
                 phaser that's an energy hog. Klingons and Romulans can jump with
                 the gate merely nearby.</li>
+            <li><strong>Your name</strong> — optionally type a one-word name in the
+                Name box before the game starts; Trek identifies you by its first
+                letter in chat messages (e.g. type "Bob" and you show up as "B").
+                Setting it adds a few seconds to boot.</li>
             <li><strong>Chat</strong> — click the screen, then type: your message
                 broadcasts to every player (and reveals your race and location…).</li>
             <li><strong>Touch screens</strong> — tap = left click,
@@ -321,38 +333,46 @@
         };
     }
 
-    /* Types a string into the emulated Alto, one key at a time. Only needs
-     * the unshifted keys Trek's launch requires. */
-    var TYPE_KEYCODES = {
-        "t": 84, "r": 82, "e": 69, "k": 75, "/": 191, "g": 71, "b": 66,
-        "n": 78, "\r": 13,
-        "0": 48, "1": 49, "2": 50, "3": 51, "4": 52,
-        "5": 53, "6": 54, "7": 55, "8": 56, "9": 57
-    };
-
-    function typeString(str) {
-        var i = 0;
-        function next() {
-            if (i >= str.length) { return; }
-            var kc = TYPE_KEYCODES[str[i]];
-            i++;
-            if (kc !== undefined) {
-                keyboard.keyDown(fakeKey(kc));
-                setTimeout(function () {
-                    keyboard.keyUp(fakeKey(kc));
-                    setTimeout(next, 120);
-                }, 120);
-            } else {
-                next();
-            }
-        }
-        next();
+    /* JS keyCode for a character we might type into the Alto. Letters and
+     * digits use their ASCII code; a few controls are special. Returns null
+     * for anything unsupported (skipped). */
+    function charKeyCode(ch) {
+        if (ch === "\r" || ch === "\n") return 13;   // Return
+        if (ch === " ") return 32;                    // Space
+        if (ch === "\b") return 8;                    // Backspace
+        var c = ch.toUpperCase().charCodeAt(0);
+        if ((c >= 65 && c <= 90) || (c >= 48 && c <= 57)) return c;  // A-Z, 0-9
+        return null;
     }
+
+    /* Type a string into the emulated Alto, one key at a time; resolves when
+     * done so callers can sequence multi-step interactions. */
+    function typeString(str) {
+        return new Promise(function (resolve) {
+            var i = 0;
+            (function next() {
+                if (i >= str.length) { resolve(); return; }
+                var kc = charKeyCode(str[i]);
+                i++;
+                if (kc !== null) {
+                    keyboard.keyDown(fakeKey(kc));
+                    setTimeout(function () {
+                        keyboard.keyUp(fakeKey(kc));
+                        setTimeout(next, 120);
+                    }, 120);
+                } else {
+                    next();
+                }
+            })();
+        });
+    }
+
+    function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
     var RACE_NAMES = { "": "Terran", "k": "Klingon", "r": "Romulan" };
 
     var trekTyped = false;
-    function typeTrek() {
+    async function typeTrek() {
         if (trekTyped) { return; }
         trekTyped = true;
 
@@ -360,9 +380,27 @@
         var race = raceChooser.value;
         raceChooser.disabled = true;       /* race is fixed once trek starts */
 
-        typeString(race ? "trek/" + race + "\r" : "trek\r");
+        var nameField = document.getElementById("nameField");
+        /* single word, letters only (the Alto login name is space-terminated) */
+        var name = (nameField.value || "").replace(/[^A-Za-z]/g, "").slice(0, 12);
+        nameField.disabled = true;
+
+        if (name) {
+            /* Set the disk's login name via the Executive "login" command, so
+             * Trek identifies this ship by it. login prompts: User Name (with
+             * "NoName" pre-filled — clear it first) then Password (leave empty). */
+            setStatus("Setting your name to “" + name + "”…");
+            await typeString("login\r");
+            await wait(1800);
+            await typeString("\b\b\b\b\b\b");   /* clear the NoName default */
+            await typeString(name + "\r");       /* user name */
+            await typeString("\r");              /* empty password */
+            await wait(2200);                    /* return to the ">" prompt */
+        }
+
+        await typeString(race ? "trek/" + race + "\r" : "trek\r");
         setStatus("Launching Trek — you are a " + RACE_NAMES[race] +
-                  " ship. Good hunting.");
+                  " ship" + (name ? " (" + name + ")" : "") + ". Good hunting.");
         document.getElementById("dropBaseButton").disabled = false;
         if (race === "r") {
             var cloak = document.getElementById("cloakButton");
