@@ -340,33 +340,45 @@
         if (ch === "\r" || ch === "\n") return 13;   // Return
         if (ch === " ") return 32;                    // Space
         if (ch === "\b") return 8;                    // Backspace
+        if (ch === "/") return 191;                   // FSlash (race switches!)
         var c = ch.toUpperCase().charCodeAt(0);
         if ((c >= 65 && c <= 90) || (c >= 48 && c <= 57)) return c;  // A-Z, 0-9
         return null;
     }
 
-    /* Type a string into the emulated Alto, one key at a time; resolves when
-     * done so callers can sequence multi-step interactions. */
-    function typeString(str) {
+    /* Timing is measured in EMULATOR FRAMES, not milliseconds. The emulator
+     * advances a fixed chunk of Alto time per animation frame, so a slow client
+     * just runs fewer frames per second — a wall-clock key hold would span far
+     * fewer emulated keyboard polls there and get missed (ContrAltoJS's "keys
+     * easily missed" bug). Counting rAF ticks makes key delivery independent of
+     * machine speed. */
+    var HOLD_FRAMES = 10;   // key held down
+    var GAP_FRAMES = 6;     // between keys
+
+    function waitFrames(n) {
         return new Promise(function (resolve) {
-            var i = 0;
-            (function next() {
-                if (i >= str.length) { resolve(); return; }
-                var kc = charKeyCode(str[i]);
-                i++;
-                if (kc !== null) {
-                    keyboard.keyDown(fakeKey(kc));
-                    setTimeout(function () {
-                        keyboard.keyUp(fakeKey(kc));
-                        setTimeout(next, 120);
-                    }, 120);
-                } else {
-                    next();
-                }
+            var count = 0;
+            (function tick() {
+                if (++count >= n) { resolve(); }
+                else { requestAnimationFrame(tick); }
             })();
         });
     }
 
+    /* Type a string into the emulated Alto, one key at a time; resolves when
+     * done so callers can sequence multi-step interactions. */
+    async function typeString(str) {
+        for (var i = 0; i < str.length; i++) {
+            var kc = charKeyCode(str[i]);
+            if (kc === null) { continue; }
+            keyboard.keyDown(fakeKey(kc));
+            await waitFrames(HOLD_FRAMES);
+            keyboard.keyUp(fakeKey(kc));
+            await waitFrames(GAP_FRAMES);
+        }
+    }
+
+    /* Real-time wait (used only for things not tied to emulator state). */
     function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
 
     var RACE_NAMES = { "": "Terran", "k": "Klingon", "r": "Romulan" };
@@ -388,14 +400,23 @@
         if (name) {
             /* Set the disk's login name via the Executive "login" command, so
              * Trek identifies this ship by it. login prompts: User Name (with
-             * "NoName" pre-filled — clear it first) then Password (leave empty). */
+             * "NoName" pre-filled — clear it first) then Password (leave empty).
+             * All waits are frame-based so this survives slow clients. */
             setStatus("Setting your name to “" + name + "”…");
             await typeString("login\r");
-            await wait(1800);
-            await typeString("\b\b\b\b\b\b");   /* clear the NoName default */
-            await typeString(name + "\r");       /* user name */
+            await waitFrames(180);               /* LogIn.run loads, shows prompt */
+            await typeString("\b\b\b\b\b\b\b\b"); /* clear NoName (extra BS harmless) */
+            await typeString(name);              /* user name */
+            await waitFrames(20);
+            await typeString("\r");              /* confirm user name */
+            await waitFrames(40);
             await typeString("\r");              /* empty password */
-            await wait(2200);                    /* return to the ">" prompt */
+            await waitFrames(180);              /* return to the ">" prompt */
+            /* Defensive flush: if any keystroke above misfired, a lone Return
+             * just yields an empty ">" command line, guaranteeing we're back at
+             * the Executive prompt before the trek command below. */
+            await typeString("\r");
+            await waitFrames(60);
         }
 
         await typeString(race ? "trek/" + race + "\r" : "trek\r");
