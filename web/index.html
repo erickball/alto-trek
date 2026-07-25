@@ -93,20 +93,29 @@
         <svg id="guideOverlay" viewBox="0 0 608 808" xmlns="http://www.w3.org/2000/svg">
             <!-- Direction circle zones: outer ring = ship heading,
                  narrow inner ring = phaser aim (the clickable band is small) -->
-            <circle cx="343" cy="189" r="43.5" fill="none"
+            <circle cx="345" cy="191" r="43.5" fill="none"
                     stroke="#3fc98a" stroke-width="13" stroke-opacity="0.25"/>
-            <circle cx="343" cy="189" r="32" fill="none"
+            <circle cx="345" cy="191" r="32" fill="none"
                     stroke="#ffa040" stroke-width="10" stroke-opacity="0.38"/>
-            <text x="343" y="148" text-anchor="middle" font-size="11"
+            <text x="345" y="150" text-anchor="middle" font-size="11"
                   font-family="monospace" fill="#3fc98a">SHIP</text>
-            <text x="343" y="224" text-anchor="middle" font-size="11"
+            <text x="345" y="226" text-anchor="middle" font-size="11"
                   font-family="monospace" fill="#ffa040">PHASERS</text>
         </svg>
     </div>
 
     <div class="controls">
+        <label>Race:
+            <select id="raceChooser">
+                <option value="" selected>Terran</option>
+                <option value="k">Klingon</option>
+                <option value="r">Romulan</option>
+            </select>
+        </label>
         <button id="dropBaseButton" onclick="dropBase()" disabled
                 title="Sends ESC B to the Alto">Drop base</button>
+        <button id="cloakButton" onclick="toggleCloak()" disabled
+                style="display:none" title="Sends ESC C to the Alto">Cloak</button>
         <label><input type="checkbox" id="guideCheckbox" checked
                 onclick="updateOverlay()">Control guide</label>
         <span id="playersOnline"></span>
@@ -161,6 +170,17 @@
                 full repair and resupply. In the Galaxy map, left-click a system
                 containing your base to jump to it; middle-click (two-finger tap)
                 for a remote scan around it.</li>
+            <li><strong>Races</strong> — pick before the game launches (during
+                boot). <em>Terrans</em>: balanced; close-spread 3-beam phasers;
+                shields nearly free; must have the star gate on the lower scanner
+                to jump. <em>Romulans</em>: fast acceleration, slow turning, wide
+                phaser spread, powerful-but-slow circular torpedoes — and a
+                <strong>cloaking device</strong> (the Cloak button) that hides you
+                from enemy long-range scans, though you can't long-range scan while
+                cloaked. <em>Klingons</em>: fast turning, weak acceleration,
+                rapid-fire torpedoes (only 15 aboard), long-range single-beam
+                phaser that's an energy hog. Klingons and Romulans can jump with
+                the gate merely nearby.</li>
             <li><strong>Chat</strong> — click the screen, then type: your message
                 broadcasts to every player (and reveals your race and location…).</li>
             <li><strong>Touch screens</strong> — tap = left click,
@@ -231,6 +251,12 @@
         ? addrParam
         : Math.floor(Math.random() * 0xFE) + 1;
 
+    /* ?race=k|r presets the race picker (still changeable until launch) */
+    var raceParam = (new URLSearchParams(location.search).get("race") || "").toLowerCase();
+    if (raceParam === "k" || raceParam === "r") {
+        document.getElementById("raceChooser").value = raceParam;
+    }
+
     function setStatus(msg) { statusEl.textContent = msg; }
 
     /* Everything is automatic: as soon as the disk image has loaded, join
@@ -297,13 +323,26 @@
         next();
     }
 
+    var RACE_NAMES = { "": "Terran", "k": "Klingon", "r": "Romulan" };
+
     var trekTyped = false;
     function typeTrek() {
         if (trekTyped) { return; }
         trekTyped = true;
-        typeString("trek\r");
-        setStatus("Launching Trek — you are a Terran ship. Good hunting.");
+
+        var raceChooser = document.getElementById("raceChooser");
+        var race = raceChooser.value;
+        raceChooser.disabled = true;       /* race is fixed once trek starts */
+
+        typeString(race ? "trek/" + race + "\r" : "trek\r");
+        setStatus("Launching Trek — you are a " + RACE_NAMES[race] +
+                  " ship. Good hunting.");
         document.getElementById("dropBaseButton").disabled = false;
+        if (race === "r") {
+            var cloak = document.getElementById("cloakButton");
+            cloak.style.display = "";
+            cloak.disabled = false;
+        }
         setTimeout(updateOverlay, 8000);   /* show the guide once the game is up */
     }
 
@@ -324,6 +363,11 @@
     /* Deploy a star base: the game command is ESC followed by B. */
     function dropBase() {
         pressKey(27 /* ESC */, function () { pressKey(66 /* B */); });
+    }
+
+    /* Romulans only: toggle the cloaking device (ESC C). */
+    function toggleCloak() {
+        pressKey(27 /* ESC */, function () { pressKey(67 /* C */); });
     }
 
     /* ---- Touch controls (mobile) ---------------------------------------- */
